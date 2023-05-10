@@ -3,8 +3,8 @@ import shutil
 from threading import Timer
 
 
-def delete_all_in_folder_with_delay(folder):
-    Timer(2.0, delete_all_in_folder, [folder]).start()
+def delete_all_in_folder_with_delay(folder, delay=2.0):
+    Timer(delay, delete_all_in_folder, [folder]).start()
 
 
 def delete_all_in_folder(folder):
@@ -15,8 +15,8 @@ def delete_all_in_folder(folder):
             shutil.rmtree(root, d)
 
 
-def delete_file_with_delay(filename):
-    Timer(2.0, delete_file, [filename]).start()
+def delete_file_with_delay(filename, delay=2.0):
+    Timer(delay, delete_file, [filename]).start()
 
 
 def delete_file(filename):
