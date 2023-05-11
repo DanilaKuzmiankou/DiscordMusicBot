@@ -7,12 +7,14 @@ import os
 import yt_dlp as youtube_dl
 from discord.utils import get
 
+from YTDLSource import YTDLSource
 from utils import delete_all_in_folder_with_delay, delete_file_with_delay, print_array_nicely
 from dotenv import load_dotenv
 
 load_dotenv()
 # Get the API token from the .env file.
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
+SONGS_FOLDER = os.getenv('SONGS_FOLDER')
 
 intents = discord.Intents().all()
 client = discord.Client(intents=intents)
@@ -20,34 +22,10 @@ bot = commands.Bot(command_prefix='$', intents=intents)
 
 youtube_dl.utils.bug_reports_message = lambda: ''
 
-songs_folder = 'songs'
 
-ytdl_format_options = {
-    'format': 'bestaudio/best',
-    'restrictfilenames': True,
-    'noplaylist': True,
-    'nocheckcertificate': True,
-    'ignoreerrors': False,
-    'logtostderr': False,
-    'quiet': True,
-    'no_warnings': True,
-    'no-overwrites': True,
-    'default_search': 'auto',
-    'source_address': '0.0.0.0',  # bind to ipv4 since ipv6 addresses cause issues sometimes
-    'paths': {
-        'home': songs_folder
-    },
-    #     'postprocessors': [{  # Extract audio using ffmpeg
-    #         'key': 'FFmpegExtractAudio',
-    #         'preferredcodec': 'm4a',
-    # }]
-}
 
-ffmpeg_options = {
-    'options': '-vn'
-}
 
-ytdl = youtube_dl.YoutubeDL(ytdl_format_options)
+playlists_folder = 'playlists'
 
 songs_query = []
 songs_query_titles = []
@@ -61,60 +39,12 @@ def add_song_to_query(song_url):
         songs_query.append(song_url)
 
 
-class YTDLSource(discord.PCMVolumeTransformer):
-    def __init__(self, source, *, data, volume=0.5):
-        super().__init__(source, volume)
-        self.data = data
-        self.title = data.get('title')
-        self.url = ""
-
-    @classmethod
-    async def from_url(cls, url, *, loop=None, stream=False):
-        loop = loop or asyncio.get_event_loop()
-        data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=not stream))
-        if 'entries' in data:
-            # take first item from a playlist
-            data = data['entries'][0]
-        filename = data['title'] if stream else ytdl.prepare_filename(data)
-        return filename, data['title']
-
-
-async def pause_voice_channel(ctx):
-    voice_client = ctx.message.guild.voice_client
-    if voice_client.is_playing():
-        await voice_client.pause()
-    else:
-        await ctx.send("The bot is not playing anything at the moment.")
-
-
-def stop_voice_channel(ctx):
-    voice_client = ctx.message.guild.voice_client
-    server = ctx.message.guild
-    voice_channel = server.voice_client
-    voice_channel.stop()
-    if voice_client.is_playing():
-        voice_client.stop()
-
-
-def is_connected_to_channel(ctx):
-    voice_client = get(ctx.bot.voice_clients, guild=ctx.guild)
-    return voice_client and voice_client.is_connected()
-
-
 async def download_song_from_url(url):
     downloaded_song, title = await YTDLSource.from_url(url, loop=bot.loop)
     global songs_query_titles
     if title not in songs_query_titles:
         songs_query_titles.append(title)
     return downloaded_song, title
-
-
-async def join_channel(ctx):
-    if not is_connected_to_channel(ctx):
-        channel = ctx.message.author.voice.channel
-        await channel.connect()
-    else:
-        print('bot is already connected to the channel')
 
 
 async def play_song(voice_channel, song_file, ctx):
@@ -140,15 +70,51 @@ async def after_song_was_played(voice_channel, ctx):
         await play_song(voice_channel=voice_channel, song_file=next_song, ctx=ctx)
 
 
+def create_playlist_file(server_name):
+    if not os.path.exists(playlists_folder):
+        print('folder:', playlists_folder + '/' + server_name)
+        os.makedirs(playlists_folder + '/' + server_name)
+        f = open("playlists.txt", "w")
+        return f
+
+@bot.group(pass_context=True)
+async def First(ctx):
+    if ctx.invoked_subcommand is None:
+        await ctx.send('Invalid sub command passed 1...')
+
+@First.group(pass_context=True)
+async def Second(ctx):
+    if ctx.invoked_subcommand is Second:
+        await ctx.send('Invalid sub command passed 2...')
+
+@Second.command(pass_context=True)
+async def Third(ctx):
+    msg = 'Finally got success {0.author.mention}'.format(ctx.message)
+    await ctx.send(msg)
+
+@commands.group(invoke_without_command=True, name='playlist')
+async def playlist(self, ctx, *args):
+    # general functionality, help, or whatever.
+    print('hi')
+    pass
+
+@playlist.group(name='add', aliases=['a'], help='Play the song')
+async def add_to_playlist(ctx, playlist_name, url):
+    try:
+        print('ctx', ctx, '\nserver:',  ctx.message.guild)
+        # playlists_file = create_playlist_file()
+    except Exception as inst:
+        print(inst)
+        await ctx.send("The bot is not connected to a voice channel.")
+
+
 @bot.command(name='play', aliases=['p'], help='Play the song')
 async def play(ctx, url):
     global current_song_url, current_song_filename
     try:
         add_song_to_query(url)
         await join_channel(ctx)
-        server = ctx.message.guild
-        voice_channel = server.voice_client
-        print('qu', bot)
+        voice_channel = ctx.message.guild.voice_client
         async with ctx.typing():
             filename, title = await download_song_from_url(url)
             print('new song was downloaded', filename)
@@ -163,16 +129,6 @@ async def play(ctx, url):
     except Exception as inst:
         print(inst)
         await ctx.send("The bot is not connected to a voice channel.")
-
-
-@bot.command(name='join', aliases=['j'], help='Join the voice channel')
-async def join(ctx):
-    await join_channel(ctx)
-
-
-@bot.command(name='pause', help='Pause the song')
-async def pause(ctx):
-    await pause_voice_channel(ctx)
 
 
 @bot.command(name='skip', aliases=['s'], help='Skip the song')
@@ -214,7 +170,25 @@ async def clear(ctx):
     stop_voice_channel(ctx)
     current_song_filename, current_song_url = '', ''
     songs_query, songs_query_titles = [], []
-    delete_all_in_folder_with_delay(songs_folder)
+    delete_all_in_folder_with_delay(SONGS_FOLDER)
+
+
+def is_connected_to_channel(ctx):
+    voice_client = get(ctx.bot.voice_clients, guild=ctx.guild)
+    return voice_client and voice_client.is_connected()
+
+
+@bot.command(name='pause', help='Pause the song')
+async def pause(ctx):
+    await pause_voice_channel(ctx)
+
+
+async def pause_voice_channel(ctx):
+    voice_client = ctx.message.guild.voice_client
+    if voice_client.is_playing():
+        await voice_client.pause()
+    else:
+        await ctx.send("The bot is not playing anything at the moment.")
 
 
 @bot.command(name='resume', help='Resume the song')
@@ -224,6 +198,19 @@ async def resume(ctx):
         await voice_client.resume()
     else:
         await ctx.send("The bot was not playing anything before this. Use play_song command")
+
+
+@bot.command(name='join', aliases=['j'], help='Join the voice channel')
+async def join(ctx):
+    await join_channel(ctx)
+
+
+async def join_channel(ctx):
+    if not is_connected_to_channel(ctx):
+        channel = ctx.message.author.voice.channel
+        await channel.connect()
+    else:
+        print('bot is already connected to the channel')
 
 
 @bot.command(name='leave', help='Leave the voice channel')
@@ -238,6 +225,15 @@ async def leave(ctx):
 @bot.command(name='stop', help='Stop the song')
 async def stop(ctx):
     stop_voice_channel(ctx)
+
+
+def stop_voice_channel(ctx):
+    voice_client = ctx.message.guild.voice_client
+    server = ctx.message.guild
+    voice_channel = server.voice_client
+    voice_channel.stop()
+    if voice_client.is_playing():
+        voice_client.stop()
 
 
 @bot.event
@@ -256,7 +252,7 @@ async def on_voice_state_update(member, before, after):
     if str(member) == bot_name_and_discriminator:
         if before.channel is not None and after.channel is None:
             print('delete songs dir...')
-            delete_all_in_folder_with_delay(songs_folder)
+            delete_all_in_folder_with_delay(SONGS_FOLDER)
 
 
 @bot.event
