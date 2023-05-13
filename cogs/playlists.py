@@ -70,7 +70,11 @@ class PlaylistCog(commands.Cog):
             server_id = ctx.message.guild.id
             path_to_file = utils.get_playlists_file_location(server_id)
             song_title = await YTDLSource.get_title(url)
-            add_song_to_file(path_to_file, playlist_name, url, song_title)
+            if song_title:
+                add_song_to_file(path_to_file, playlist_name, url, song_title)
+                return await ctx.send('{} was added to {}'.format(song_title, playlist_name))
+            else:
+                return await ctx.send('**Current url is not a valid youtube link!**'.format(song_title))
         except Exception as inst:
             print(inst)
             await ctx.send("The bot is not connected to a voice channel.")
@@ -86,16 +90,15 @@ class PlaylistCog(commands.Cog):
             server_id = ctx.message.guild.id
             path_to_file = utils.get_playlists_file_location(server_id)
             delete_result = utils.delete_song_from_file(path_to_file, playlist_name, song_index)
-            if not type(delete_result) is bool:
-                await ctx.send(delete_result)
+            return await ctx.send(delete_result)
 
         except Exception as inst:
             print(inst)
             await ctx.send("The bot is not connected to a voice channel.")
 
-    @playlist.command(name='playlists', aliases=['p'])
-    async def all(self, ctx, playlist_name=None):
-        """Get all playlists"""
+    @playlist.command(name='queue', aliases=['q'])
+    async def queue(self, ctx, playlist_name=None):
+        """Get playlist queue"""
         server_id = ctx.message.guild.id
         playlist_file_location = utils.get_playlists_file_location(server_id)
         if not playlist_name:
@@ -118,19 +121,6 @@ class PlaylistCog(commands.Cog):
                 await ctx.send('**Current playlist: \n\n{}**'.format(print_array_nicely(songs_titles)))
             else:
                 await ctx.send('**Playlist is empty or not exist **'.format())
-
-    @playlist.command(name='queue', aliases=['q'])
-    async def queue(self, ctx, playlist_name=None):
-        """Get playlist queue"""
-        if not playlist_name:
-            return await ctx.send(wrong_format.format('playlist'))
-        server_id = ctx.message.guild.id
-        playlist_file_location = utils.get_playlists_file_location(server_id)
-        songs_titles = get_playlist_queue(playlist_file_location, playlist_name)
-        if len(songs_titles) > 0:
-            await ctx.send('**Current playlist: \n\n{}**'.format(print_array_nicely(songs_titles)))
-        else:
-            await ctx.send('**Playlist is empty or not exist **'.format())
 
 
 async def setup(bot):

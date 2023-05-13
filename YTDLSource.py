@@ -35,7 +35,6 @@ ffmpeg_options = {
 
 ytdl = youtube_dl.YoutubeDL(ytdl_format_options)
 
-youtube_dl.utils.bug_reports_message = lambda: ''
 
 
 class YTDLSource(discord.PCMVolumeTransformer):
@@ -46,22 +45,41 @@ class YTDLSource(discord.PCMVolumeTransformer):
         self.url = ""
 
     @classmethod
+    def is_supported(cls, url):
+        extractors = youtube_dl.extractor.gen_extractors()
+        for e in extractors:
+            if e.suitable(url) and e.IE_NAME != 'generic':
+                return True
+        return False
+
+    @classmethod
     async def from_url(cls, url, *, loop=None, stream=False):
-        loop = loop or asyncio.get_event_loop()
-        data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=not stream))
-        if 'entries' in data:
-            # take first item from a playlist
-            data = data['entries'][0]
-        filename = data['title'] if stream else ytdl.prepare_filename(data)
-        return filename, data['title']
+        if cls.is_supported(url):
+            try:
+                loop = loop or asyncio.get_event_loop()
+                data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=not stream))
+                if 'entries' in data:
+                    # take first item from a playlist
+                    data = data['entries'][0]
+                filename = data['title'] if stream else ytdl.prepare_filename(data)
+                return filename, data['title']
+            except Exception as e:
+                print('YTDL EXCEPTION:', e)
+        else:
+            print('Current url is not a valid youtube link!')
+            return False, False
 
     @classmethod
     async def get_title(cls, url):
-        try:
-            with ytdl:
-                info_dict = ytdl.extract_info(url, download=False)
-                video_title = info_dict.get('title', None)
-        except Exception as inst:
-            print('get titile exception', inst)
-            raise Exception(inst)
-        return video_title
+        if cls.is_supported(url):
+            try:
+                with ytdl:
+                    info_dict = ytdl.extract_info(url, download=False)
+                    video_title = info_dict.get('title', None)
+            except Exception as inst:
+                print('get titile exception', inst)
+                raise Exception(inst)
+            return video_title
+        else:
+            print('Current url is not a valid youtube link!')
+            return False

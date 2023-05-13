@@ -18,29 +18,16 @@ QUEUE_FILE_NAME = os.getenv('QUEUE_FILE_NAME')
 COMMAND_PREFIX = os.getenv('COMMAND_PREFIX')
 SONG_TITLES_KEY = os.getenv('SONG_TITLES_KEY')
 SONG_URLS_KEY = os.getenv('SONG_URLS_KEY')
-
-def get_queue_file_location(server_id):
-    current_server_folder = create_server_folder(server_id)
-    current_queue_folder = current_server_folder + '/' + QUEUE_FOLDER
-    if not os.path.exists(current_queue_folder):
-        os.makedirs(current_queue_folder)
-    queue_file_location = current_queue_folder + '/' + QUEUE_FULL_FILE_NAME
-    return queue_file_location
+SONG_FILES_KEY = os.getenv('SONG_FILES_KEY')
+SONGS_FOLDER = os.getenv('SONGS_FOLDER')
 
 
-def get_queue(queue_file_location):
-    songs_titles = []
-    try:
-        if os.path.exists(queue_file_location):
-            with open(queue_file_location, 'r') as f:
-                data = json.loads(f.read())
-                songs_titles = data[QUEUE_FILE_NAME][SONG_TITLES_KEY]
-        else: print('file not exists')
-    except json.decoder.JSONDecodeError:
-        print('json decode error')
-    finally:
-        return songs_titles
-
+async def clearQueue(ctx):
+    server_id = ctx.message.guild.id
+    queue_file_location = utils.get_queue_file_location(server_id)
+    utils.delete_file_with_delay(queue_file_location)
+    utils.delete_all_in_folder_with_delay(SONGS_FOLDER)
+    await ctx.send('Queue was cleaned')
 
 class SongsQueueCog(commands.Cog):
 
@@ -59,10 +46,14 @@ class SongsQueueCog(commands.Cog):
             return await ctx.send(wrong_format.format('song url'))
         try:
             server_id = ctx.message.guild.id
-            path_to_file = get_queue_file_location(server_id)
-            song_title = await YTDLSource.get_title(url)
+            path_to_file = utils.get_queue_file_location(server_id)
+            filename, song_title = await YTDLSource.from_url(url, loop=self.bot.loop)
+            if filename:
+                add_song_to_file(path_to_file, QUEUE_FILE_NAME, url, song_title, filename)
+                await ctx.send('**{} was added to queue:**'.format(song_title))
+            else:
+                await ctx.send('**Current url is not a valid youtube link!**'.format(song_title))
             print('song title:', song_title)
-            add_song_to_file(path_to_file, QUEUE_FILE_NAME, url, song_title)
         except Exception as inst:
             print(inst)
             await ctx.send("The bot is not connected to a voice channel.")
@@ -71,8 +62,8 @@ class SongsQueueCog(commands.Cog):
     async def current_queue(self, ctx):
         """Get queue"""
         server_id = ctx.message.guild.id
-        queue_file_location = get_queue_file_location(server_id)
-        songs_titles = get_queue(queue_file_location)
+        queue_file_location = utils.get_queue_file_location(server_id)
+        songs_titles, songs_urls, songs_files = utils.get_queue(queue_file_location)
         print(queue_file_location, songs_titles)
         if len(songs_titles) > 0:
             await ctx.send('**Current queue: \n\n{}**'.format(print_array_nicely(songs_titles)))
@@ -86,72 +77,38 @@ class SongsQueueCog(commands.Cog):
             return await ctx.send(wrong_format.format('playlist'))
         server_id = ctx.message.guild.id
         playlist_file_location = utils.get_playlists_file_location(server_id)
-        queue_file_location = get_queue_file_location(server_id)
+        queue_file_location = utils.get_queue_file_location(server_id)
         if os.path.exists(playlist_file_location):
             with open(playlist_file_location, 'r') as playlist_file:
                 playlist_file_data = json.loads(playlist_file.read())
+                if playlist_name not in playlist_file_data:
+                    return await ctx.send('**Playlist with this name doesn`t exist!**'.format())
                 playlist_songs_titles = playlist_file_data[playlist_name][SONG_TITLES_KEY]
                 playlist_songs_urls = playlist_file_data[playlist_name][SONG_URLS_KEY]
-                with open(queue_file_location, 'r') as queue_file:
-                    queue_file_data = json.loads(queue_file.read())
-                    queue_file_data[SONG_TITLES_KEY] = queue_file_data[SONG_TITLES_KEY] + playlist_songs_titles
-                    queue_file_data[SONG_URLS_KEY] = queue_file_data[SONG_URLS_KEY] + playlist_songs_urls
+                queue_file_data = {QUEUE_FILE_NAME: {SONG_TITLES_KEY: [], SONG_URLS_KEY: [], SONG_FILES_KEY: []}}
+                if os.path.exists(queue_file_location):
+                    with open(queue_file_location, 'r') as queue_file:
+                        queue_file_data = json.loads(queue_file.read())
                 with open(queue_file_location, 'w+') as queue_file:
+                    filenames = []
+                    queue_data = queue_file_data[QUEUE_FILE_NAME]
+                    queue_data[SONG_TITLES_KEY] = utils.concat_arrays_uniq_values(queue_data[SONG_TITLES_KEY],
+                                                                                  playlist_songs_titles)
+                    queue_data[SONG_URLS_KEY] = utils.concat_arrays_uniq_values(queue_data[SONG_URLS_KEY],
+                                                                                playlist_songs_urls)
+                    queue_data[SONG_FILES_KEY] = filenames
+                    queue_file_data[QUEUE_FILE_NAME] = queue_data
+                    for song_url in queue_data[SONG_URLS_KEY]:
+                        print('downloading song from url:', song_url)
+                        filename, song_title = await YTDLSource.from_url(song_url, loop=self.bot.loop)
+                        filenames.append(filename)
+                    print(queue_file_data)
                     json.dump(queue_file_data, queue_file)
 
-    # @queue.command(name='play', aliases=['p'], help='Play the song from query')
-    # async def play(ctx, url):
-    #     global current_song_url, current_song_filename
-    #     try:
-    #         add_song_to_query(url)
-    #         await join_channel(ctx)
-    #         voice_channel = ctx.message.guild.voice_client
-    #         async with ctx.typing():
-    #             filename, title = await download_song_from_url(url)
-    #             print('new song was downloaded', filename)
-    #             if not voice_channel.is_playing():
-    #                 print('starting new playing queue')
-    #                 current_song_url = url
-    #                 current_song_filename = filename
-    #                 await play_song(voice_channel, filename, ctx)
-    #                 await ctx.send('**Песня начала проигрываться:** {}'.format(title))
-    #             else:
-    #                 await ctx.send('**Песня была поставлена в очередь:** {}'.format(title))
-    #     except Exception as inst:
-    #         print(inst)
-    #         await ctx.send("The bot is not connected to a voice channel.")
-    #
-    # @queue.command(name='skip', aliases=['s'], help='Skip the song from query')
-    # async def skip(ctx):
-    #     global current_song_url, current_song_filename
-    #
-    #     current_song_index = songs_query.index(current_song_url)
-    #     await ctx.send('{} **was deleted from queue**'.format(songs_query_titles[current_song_index]))
-    #     del songs_query[current_song_index]
-    #     del songs_query_titles[current_song_index]
-    #     stop_voice_channel(ctx)
-    #     delete_file_with_delay(filename=current_song_filename)
-    #     if len(songs_query) > 0:
-    #         server = ctx.message.guild
-    #         voice_channel = server.voice_client
-    #         current_song_was_last = current_song_index == len(songs_query)
-    #         next_song_index = 0 if current_song_was_last else current_song_index
-    #         next_song_url = songs_query[next_song_index]
-    #         current_song_url = next_song_url
-    #         filename, title = await download_song_from_url(current_song_url)
-    #         current_song_filename = filename
-    #         if not voice_channel.is_playing():
-    #             await play_song(voice_channel, filename, ctx)
-    #     else:
-    #         await ctx.send('**Queue is empty **'.format())
-    #
-    # @queue.command(name='clear', aliases=['c'], help='Clear songs query')
-    # async def clear(ctx):
-    #     global current_song_url, current_song_filename, songs_query, songs_query_titles
-    #     stop_voice_channel(ctx)
-    #     current_song_filename, current_song_url = '', ''
-    #     songs_query, songs_query_titles = [], []
-    #     delete_all_in_folder_with_delay(SONGS_FOLDER)
+    @song_queue.command(name='clear', aliases=['c'], help='Clear songs query')
+    async def clear(self, ctx):
+        await clearQueue(ctx)
+
 
 async def setup(bot):
     await bot.add_cog(SongsQueueCog(bot))
