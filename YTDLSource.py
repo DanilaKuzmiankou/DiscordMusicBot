@@ -2,7 +2,9 @@ import asyncio
 import os
 import discord
 import yt_dlp as youtube_dl
+from dotenv import load_dotenv
 
+load_dotenv()
 
 SONGS_FOLDER = os.getenv('SONGS_FOLDER')
 
@@ -33,6 +35,8 @@ ffmpeg_options = {
 
 ytdl = youtube_dl.YoutubeDL(ytdl_format_options)
 
+youtube_dl.utils.bug_reports_message = lambda: ''
+
 
 class YTDLSource(discord.PCMVolumeTransformer):
     def __init__(self, source, *, data, volume=0.5):
@@ -50,3 +54,14 @@ class YTDLSource(discord.PCMVolumeTransformer):
             data = data['entries'][0]
         filename = data['title'] if stream else ytdl.prepare_filename(data)
         return filename, data['title']
+
+    @classmethod
+    async def get_title(cls, url):
+        try:
+            with ytdl:
+                info_dict = ytdl.extract_info(url, download=False)
+                video_title = info_dict.get('title', None)
+        except Exception as inst:
+            print('get titile exception', inst)
+            raise Exception(inst)
+        return video_title
