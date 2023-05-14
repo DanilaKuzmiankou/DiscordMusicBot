@@ -49,15 +49,38 @@ def get_all_playlists(playlist_file_location):
     finally:
         return playlists
 
+async def print_playlist_queue(ctx, playlist_name):
+    server_id = ctx.message.guild.id
+    playlist_file_location = utils.get_playlists_file_location(server_id)
+    if not playlist_name:
+        playlists = get_all_playlists(playlist_file_location)
+        if len(playlists) == 0:
+            return await ctx.send('**You have not created any playlists yet**'.format())
+        result = ''
+        for playlist in playlists:
+            songs_titles = get_playlist_queue(playlist_file_location, playlist)
+            playlist_text = ''
+            if len(songs_titles) > 0:
+                playlist_text = print_array_nicely(songs_titles)
+            else:
+                playlist_text = 'Playlist is empty.'
+            result += playlist + ':\n' + playlist_text + "\n"
+        return await ctx.send('**Your playlists: \n\n{}**'.format(result))
+    else:
+        songs_titles = get_playlist_queue(playlist_file_location, playlist_name)
+        if len(songs_titles) > 0:
+            await ctx.send('**Current playlist: \n\n{}**'.format(print_array_nicely(songs_titles)))
+        else:
+            await ctx.send('**Playlist is empty or not exist **'.format())
 
-class PlaylistCog(commands.Cog):
+class PlaylistCog(commands.Cog, name='Playlist'):
     def __init__(self, bot):
         self.bot = bot
 
     @commands.group(name='playlist', aliases=['pl'],
-                    help="Playlists commands. Type ` {}help pl` to see more.".format(COMMAND_PREFIX))
+                    help="Playlists commands. Type ` {}help pl` to see more.".format(COMMAND_PREFIX), invoke_without_command=True)
     async def playlist(self, ctx):
-        pass
+        await print_playlist_queue(ctx, None)
 
     @playlist.command(name='add', aliases=['a'])
     async def add(self, ctx, playlist_name=None, url=None):
@@ -96,31 +119,9 @@ class PlaylistCog(commands.Cog):
             print(inst)
             await ctx.send("The bot is not connected to a voice channel.")
 
-    @playlist.command(name='queue', aliases=['q'])
+    @playlist.command(name='queue', aliases=['q'], help='Command usage: $q q - Get all playlists info; $q q playlist_name - Get uniq playlist info"')
     async def queue(self, ctx, playlist_name=None):
-        """Get playlist queue"""
-        server_id = ctx.message.guild.id
-        playlist_file_location = utils.get_playlists_file_location(server_id)
-        if not playlist_name:
-            playlists = get_all_playlists(playlist_file_location)
-            if len(playlists) == 0:
-                return await ctx.send('**You have not created any playlists yet**'.format())
-            result = ''
-            for playlist in playlists:
-                songs_titles = get_playlist_queue(playlist_file_location, playlist)
-                playlist_text = ''
-                if len(songs_titles) > 0:
-                    playlist_text = print_array_nicely(songs_titles)
-                else:
-                    playlist_text = 'Playlist is empty.'
-                result += playlist + ':\n' + playlist_text + "\n"
-            return await ctx.send('**Your playlists: \n\n{}**'.format(result))
-        else:
-            songs_titles = get_playlist_queue(playlist_file_location, playlist_name)
-            if len(songs_titles) > 0:
-                await ctx.send('**Current playlist: \n\n{}**'.format(print_array_nicely(songs_titles)))
-            else:
-                await ctx.send('**Playlist is empty or not exist **'.format())
+        await print_playlist_queue(ctx, playlist_name)
 
 
 async def setup(bot):

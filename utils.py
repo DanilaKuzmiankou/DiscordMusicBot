@@ -5,6 +5,8 @@ from threading import Timer
 
 from dotenv import load_dotenv
 
+import bot_state
+
 load_dotenv()
 
 SERVERS_FOLDER = os.getenv('SERVERS_FOLDER')
@@ -156,3 +158,13 @@ def get_queue(queue_file_location):
 
 def concat_arrays_uniq_values(array1, array2):
     return list(dict.fromkeys(array1 + array2))
+
+
+def stop_voice_channel(ctx):
+    bot_state.is_stopped = True
+    voice_client = ctx.message.guild.voice_client
+    server = ctx.message.guild
+    voice_channel = server.voice_client
+    if voice_client and voice_client.is_playing():
+        voice_channel.stop()
+        voice_client.stop()

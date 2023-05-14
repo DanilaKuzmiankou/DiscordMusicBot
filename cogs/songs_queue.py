@@ -4,6 +4,7 @@ import os
 import discord
 from discord.ext import commands
 
+import bot_state
 import utils
 from YTDLSource import YTDLSource
 from answers import wrong_format
@@ -25,19 +26,34 @@ SONGS_FOLDER = os.getenv('SONGS_FOLDER')
 async def clearQueue(ctx):
     server_id = ctx.message.guild.id
     queue_file_location = utils.get_queue_file_location(server_id)
+    utils.stop_voice_channel(ctx)
     utils.delete_file_with_delay(queue_file_location)
     utils.delete_all_in_folder_with_delay(SONGS_FOLDER)
     await ctx.send('Queue was cleaned')
 
-class SongsQueueCog(commands.Cog):
 
+async def print_current_queue(ctx):
+    server_id = ctx.message.guild.id
+    queue_file_location = utils.get_queue_file_location(server_id)
+    songs_titles, songs_urls, songs_files = utils.get_queue(queue_file_location)
+    print(queue_file_location, songs_titles)
+    if len(songs_titles) > 0:
+        await ctx.send('**Current queue: \n\n{}**'.format(print_array_nicely(songs_titles)))
+    else:
+        await ctx.send('**Queue is empty**'.format())
+
+
+class SongsQueueCog(commands.Cog, name='Queue'):
+    """Shows all modules of that bot"""
     def __init__(self, bot):
+        """Shows all modules of that bot"""
         self.bot = bot
 
     @commands.group(name='queue', aliases=['q'],
-                    help="Queue commands. Type ` {}help q` to see more.".format(COMMAND_PREFIX))
+                    help="Queue commands. Type ` {}help q` to see more.".format(COMMAND_PREFIX),
+                    invoke_without_command=True)
     async def song_queue(self, ctx):
-        pass
+        await print_current_queue(ctx)
 
     @song_queue.command(name='add', aliases=['a'])
     async def add(self, ctx, url=None):
@@ -61,14 +77,7 @@ class SongsQueueCog(commands.Cog):
     @song_queue.command(name='queue', aliases=['q'])
     async def current_queue(self, ctx):
         """Get queue"""
-        server_id = ctx.message.guild.id
-        queue_file_location = utils.get_queue_file_location(server_id)
-        songs_titles, songs_urls, songs_files = utils.get_queue(queue_file_location)
-        print(queue_file_location, songs_titles)
-        if len(songs_titles) > 0:
-            await ctx.send('**Current queue: \n\n{}**'.format(print_array_nicely(songs_titles)))
-        else:
-            await ctx.send('**Queue is empty**'.format())
+        await print_current_queue(ctx)
 
     @song_queue.command(name='playlist', aliases=['pl'])
     async def add_playlist_to_queue(self, ctx, playlist_name=None):
@@ -83,27 +92,30 @@ class SongsQueueCog(commands.Cog):
                 playlist_file_data = json.loads(playlist_file.read())
                 if playlist_name not in playlist_file_data:
                     return await ctx.send('**Playlist with this name doesn`t exist!**'.format())
-                playlist_songs_titles = playlist_file_data[playlist_name][SONG_TITLES_KEY]
-                playlist_songs_urls = playlist_file_data[playlist_name][SONG_URLS_KEY]
-                queue_file_data = {QUEUE_FILE_NAME: {SONG_TITLES_KEY: [], SONG_URLS_KEY: [], SONG_FILES_KEY: []}}
-                if os.path.exists(queue_file_location):
-                    with open(queue_file_location, 'r') as queue_file:
-                        queue_file_data = json.loads(queue_file.read())
-                with open(queue_file_location, 'w+') as queue_file:
-                    filenames = []
-                    queue_data = queue_file_data[QUEUE_FILE_NAME]
-                    queue_data[SONG_TITLES_KEY] = utils.concat_arrays_uniq_values(queue_data[SONG_TITLES_KEY],
-                                                                                  playlist_songs_titles)
-                    queue_data[SONG_URLS_KEY] = utils.concat_arrays_uniq_values(queue_data[SONG_URLS_KEY],
-                                                                                playlist_songs_urls)
-                    queue_data[SONG_FILES_KEY] = filenames
-                    queue_file_data[QUEUE_FILE_NAME] = queue_data
-                    for song_url in queue_data[SONG_URLS_KEY]:
-                        print('downloading song from url:', song_url)
-                        filename, song_title = await YTDLSource.from_url(song_url, loop=self.bot.loop)
-                        filenames.append(filename)
-                    print(queue_file_data)
-                    json.dump(queue_file_data, queue_file)
+                await ctx.send('**Start adding songs from {} playlist!**'.format(playlist_name))
+                async with ctx.typing():
+                    playlist_songs_titles = playlist_file_data[playlist_name][SONG_TITLES_KEY]
+                    playlist_songs_urls = playlist_file_data[playlist_name][SONG_URLS_KEY]
+                    queue_file_data = {QUEUE_FILE_NAME: {SONG_TITLES_KEY: [], SONG_URLS_KEY: [], SONG_FILES_KEY: []}}
+                    if os.path.exists(queue_file_location):
+                        with open(queue_file_location, 'r') as queue_file:
+                            queue_file_data = json.loads(queue_file.read())
+                    with open(queue_file_location, 'w+') as queue_file:
+                        filenames = []
+                        queue_data = queue_file_data[QUEUE_FILE_NAME]
+                        queue_data[SONG_TITLES_KEY] = utils.concat_arrays_uniq_values(queue_data[SONG_TITLES_KEY],
+                                                                                      playlist_songs_titles)
+                        queue_data[SONG_URLS_KEY] = utils.concat_arrays_uniq_values(queue_data[SONG_URLS_KEY],
+                                                                                    playlist_songs_urls)
+                        queue_data[SONG_FILES_KEY] = filenames
+                        queue_file_data[QUEUE_FILE_NAME] = queue_data
+                        for song_url in queue_data[SONG_URLS_KEY]:
+                            print('downloading song from url:', song_url)
+                            filename, song_title = await YTDLSource.from_url(song_url, loop=self.bot.loop)
+                            filenames.append(filename)
+                        print(queue_file_data)
+                        json.dump(queue_file_data, queue_file)
+                await ctx.send('**Playlist was added to queue!**'.format())
 
     @song_queue.command(name='clear', aliases=['c'], help='Clear songs query')
     async def clear(self, ctx):

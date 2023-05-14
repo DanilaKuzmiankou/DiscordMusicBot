@@ -8,6 +8,7 @@ import os
 import yt_dlp as youtube_dl
 from discord.utils import get
 
+import bot_state
 import utils
 from YTDLSource import YTDLSource
 from cogs.songs_queue import clearQueue
@@ -26,10 +27,14 @@ client = discord.Client(intents=intents)
 bot = commands.Bot(command_prefix=COMMAND_PREFIX, intents=intents)
 
 is_playing = False
-initial_extensions = ['cogs.songs_queue', 'cogs.playlists']
+initial_extensions = ['cogs.songs_queue', 'cogs.playlists', 'cogs.custom_help']
 
 current_playing_file = ''
-stopped = False
+
+
+bot.help_command = None
+
+
 
 @bot.command(name='play', aliases=['p'], help='Play the song from query')
 async def play(ctx, song_url=None):
@@ -46,7 +51,7 @@ async def play(ctx, song_url=None):
 
     songs_titles, songs_urls, songs_files = utils.get_queue(queue_file_location)
     if len(songs_files) > 0:
-        join_channel_result = await join_channel(ctx)
+        await join_channel(ctx)
         voice_channel = ctx.message.guild.voice_client
         if not voice_channel.is_playing():
             print('starting new playing queue', songs_titles)
@@ -59,15 +64,17 @@ async def play(ctx, song_url=None):
 @bot.command(name='skip', aliases=['s'], help='Skip the song')
 async def skip(ctx):
     global current_playing_file
+
+    utils.stop_voice_channel(ctx)
+
     server_id = ctx.message.guild.id
     queue_file_location = utils.get_queue_file_location(server_id)
     songs_titles, songs_urls, songs_files = utils.get_queue(queue_file_location)
     current_song_index = songs_files.index(current_playing_file)
 
-    stop_voice_channel(ctx)
-
     song_title = songs_titles[current_song_index]
     utils.delete_song_from_file(queue_file_location, QUEUE_FILE_NAME, current_song_index+1)
+    utils.delete_file_with_delay(current_playing_file)
     await ctx.send('{} **was deleted from queue**'.format(song_title))
     print(songs_titles, songs_urls, songs_files, 'q')
 
@@ -85,9 +92,9 @@ async def skip(ctx):
 
 
 async def play_song(ctx, voice_channel, song_file):
+    bot_state.is_stopped = False
     print('start playing, cur file:', song_file)
-    global stopped, current_playing_file
-    stopped = False
+    global current_playing_file
     current_playing_file = song_file
     voice_channel.play(discord.FFmpegPCMAudio(executable="ffmpeg.exe", source=song_file),
                        after=lambda e: asyncio.run_coroutine_threadsafe(
@@ -96,7 +103,7 @@ async def play_song(ctx, voice_channel, song_file):
 
 
 async def after_song_was_played(ctx, voice_channel, song_file):
-    if stopped:
+    if bot_state.is_stopped:
         return
     server_id = ctx.message.guild.id
     queue_file_location = utils.get_queue_file_location(server_id)
@@ -116,27 +123,6 @@ def is_connected_to_channel(ctx):
     voice_client = get(ctx.bot.voice_clients, guild=ctx.guild)
     return voice_client and voice_client.is_connected()
 
-
-@bot.command(name='pause', help='Pause the song')
-async def pause(ctx):
-    await pause_voice_channel(ctx)
-
-
-async def pause_voice_channel(ctx):
-    voice_client = ctx.message.guild.voice_client
-    if voice_client.is_playing():
-        await voice_client.pause()
-    else:
-        await ctx.send("The bot is not playing anything at the moment.")
-
-
-@bot.command(name='resume', help='Resume the song')
-async def resume(ctx):
-    voice_client = ctx.message.guild.voice_client
-    if voice_client.is_paused():
-        await voice_client.resume()
-    else:
-        await ctx.send("The bot was not playing anything before this. Use play_song command")
 
 
 @bot.command(name='join', aliases=['j'], help='Join the voice channel')
@@ -161,26 +147,21 @@ async def join_channel(ctx):
 @bot.command(name='leave', help='Leave the voice channel')
 async def leave(ctx):
     voice_client = ctx.message.guild.voice_client
-    if voice_client.is_connected_to_channel():
-        await voice_client.disconnect()
-    else:
-        await ctx.send("The bot is not connected to a voice channel.")
+    await voice_client.disconnect()
+
+
+@bot.command(name='resume', help='Resume the song')
+async def resume(ctx):
+    server = ctx.message.guild
+    voice_channel = server.voice_client
+    await play_song(ctx, voice_channel, current_playing_file)
 
 
 @bot.command(name='stop', help='Stop the song')
 async def stop(ctx):
-    stop_voice_channel(ctx)
+    utils.stop_voice_channel(ctx)
 
 
-def stop_voice_channel(ctx):
-    global stopped
-    stopped = True
-    voice_client = ctx.message.guild.voice_client
-    server = ctx.message.guild
-    voice_channel = server.voice_client
-    voice_channel.stop()
-    if voice_client.is_playing():
-        voice_client.stop()
 
 
 @bot.event
@@ -196,13 +177,29 @@ async def on_ready():
 
 @bot.event
 async def on_voice_state_update(member, before, after):
-    bot_name_and_discriminator = '{}#{}'.format(bot.user.name, bot.user.discriminator)
-    if str(member) == bot_name_and_discriminator:
-        if before.channel is not None and after.channel is None:
-            print('delete songs dir...', before)
-            delete_all_in_folder_with_delay(SONGS_FOLDER)
-            # ctx = await bot.get_context(member)
-            # await clearQueue(ctx)
+
+    if not member.id == bot.user.id:
+        return
+
+    elif before.channel is None:
+        voice = after.channel.guild.voice_client
+        time = 0
+        while True:
+            await asyncio.sleep(1)
+            time = time + 1
+            if voice.is_playing() and not voice.is_paused():
+                time = 0
+            if time == 600:
+                await voice.disconnect()
+
+            if not voice.is_connected():
+                break
+
+    if before.channel is not None and after.channel is None:
+        print('delete songs dir...', before)
+        delete_all_in_folder_with_delay(SONGS_FOLDER)
+        # ctx = await bot.get_context(member)
+        # await clearQueue(ctx)
 
 
 
@@ -214,6 +211,9 @@ async def on_member_join(member):
             if member.is_on_mobile():
                 on_mobile = True
             await channel.send("О, шпана понаехала...\n On Mobile : {}".format(member.name, on_mobile))
+
+
+
 
 
 async def load_extensions():
