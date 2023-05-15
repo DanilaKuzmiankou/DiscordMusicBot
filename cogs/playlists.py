@@ -74,15 +74,19 @@ async def print_playlist_queue(ctx, playlist_name):
             await ctx.send('**Playlist is empty or not exist **'.format())
 
 class PlaylistCog(commands.Cog, name='Playlist'):
+    """Server playlists control"""
+
+
     def __init__(self, bot):
         self.bot = bot
 
     @commands.group(name='playlist', aliases=['pl'],
-                    help="Playlists commands. Type ` {}help pl` to see more.".format(COMMAND_PREFIX), invoke_without_command=True)
+                    help="Get all playlists and songs in them", invoke_without_command=True)
     async def playlist(self, ctx):
         await print_playlist_queue(ctx, None)
 
-    @playlist.command(name='add', aliases=['a'])
+    @playlist.command(name='add', aliases=['a'], help='`{}add playlist_name url` - Add songs to '
+                                                              'playlist'.format(COMMAND_PREFIX))
     async def add(self, ctx, playlist_name=None, url=None):
         """Add song to playlist"""
         if not playlist_name:
@@ -102,7 +106,8 @@ class PlaylistCog(commands.Cog, name='Playlist'):
             print(inst)
             await ctx.send("The bot is not connected to a voice channel.")
 
-    @playlist.command(name='delete', aliases=['d'])
+    @playlist.command(name='delete', aliases=['d'], help='`{}delete playlist_name song_index` - Delete song from '
+                                                              'playlist'.format(COMMAND_PREFIX))
     async def delete(self, ctx, playlist_name=None, song_index=None):
         """Delete song from playlist"""
         if not playlist_name:
@@ -119,7 +124,9 @@ class PlaylistCog(commands.Cog, name='Playlist'):
             print(inst)
             await ctx.send("The bot is not connected to a voice channel.")
 
-    @playlist.command(name='queue', aliases=['q'], help='Command usage: $q q - Get all playlists info; $q q playlist_name - Get uniq playlist info"')
+    @playlist.command(name='queue', aliases=['q'], help='`{}queue` - Get all playlists and songs in them \n `{}queue '
+                                                        'playlist_name` - Get all songs in playlist'.format(
+        COMMAND_PREFIX, COMMAND_PREFIX))
     async def queue(self, ctx, playlist_name=None):
         await print_playlist_queue(ctx, playlist_name)
 

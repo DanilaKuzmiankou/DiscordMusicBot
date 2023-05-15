@@ -36,7 +36,9 @@ bot.help_command = None
 
 
 
-@bot.command(name='play', aliases=['p'], help='Play the song from query')
+@bot.command(name='play', aliases=['p'], help='`{}play` - play the song from queue \n `{}play song_url` - add song to '
+                                              'queue and play, if there is no playing songs now'.format(
+    COMMAND_PREFIX, COMMAND_PREFIX))
 async def play(ctx, song_url=None):
     server_id = ctx.message.guild.id
     queue_file_location = utils.get_queue_file_location(server_id)

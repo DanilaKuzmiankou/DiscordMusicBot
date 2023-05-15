@@ -44,20 +44,20 @@ async def print_current_queue(ctx):
 
 
 class SongsQueueCog(commands.Cog, name='Queue'):
-    """Shows all modules of that bot"""
+    """Server queue control"""
+
     def __init__(self, bot):
         """Shows all modules of that bot"""
         self.bot = bot
 
     @commands.group(name='queue', aliases=['q'],
-                    help="Queue commands. Type ` {}help q` to see more.".format(COMMAND_PREFIX),
                     invoke_without_command=True)
     async def song_queue(self, ctx):
+        """Get current queue"""
         await print_current_queue(ctx)
 
-    @song_queue.command(name='add', aliases=['a'])
+    @song_queue.command(name='add', aliases=['a'], help='`{}add url` - Add song to queue'.format(COMMAND_PREFIX))
     async def add(self, ctx, url=None):
-        """Add song to queue"""
         if not url:
             return await ctx.send(wrong_format.format('song url'))
         try:
@@ -74,14 +74,10 @@ class SongsQueueCog(commands.Cog, name='Queue'):
             print(inst)
             await ctx.send("The bot is not connected to a voice channel.")
 
-    @song_queue.command(name='queue', aliases=['q'])
-    async def current_queue(self, ctx):
-        """Get queue"""
-        await print_current_queue(ctx)
 
-    @song_queue.command(name='playlist', aliases=['pl'])
+    @song_queue.command(name='playlist', aliases=['pl'], help='`{}playlist playlist_name` - Add all songs from '
+                                                              'playlist to queue'.format(COMMAND_PREFIX))
     async def add_playlist_to_queue(self, ctx, playlist_name=None):
-        """Add songs from playlist to queue"""
         if not playlist_name:
             return await ctx.send(wrong_format.format('playlist'))
         server_id = ctx.message.guild.id
@@ -117,7 +113,7 @@ class SongsQueueCog(commands.Cog, name='Queue'):
                         json.dump(queue_file_data, queue_file)
                 await ctx.send('**Playlist was added to queue!**'.format())
 
-    @song_queue.command(name='clear', aliases=['c'], help='Clear songs query')
+    @song_queue.command(name='clear', aliases=['c'], help='Clear songs queue')
     async def clear(self, ctx):
         await clearQueue(ctx)
 
