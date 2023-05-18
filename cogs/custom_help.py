@@ -43,7 +43,9 @@ class Help(commands.Cog):
 
             cogs_desc = ''
             for cog in self.bot.cogs:
-                cogs_desc += f'`{cog}` {self.bot.cogs[cog].__doc__}\n'
+                cog_aliases = self.bot.get_cog(cog).get_commands()[0].aliases
+                aliases_string = f' (alias: {", ".join(cog_aliases)})' if len(cog_aliases) > 0 else ""
+                cogs_desc += f'`{cog}{aliases_string}` {self.bot.cogs[cog].__doc__}\n'
 
             emb.add_field(name='Modules', value=cogs_desc, inline=False)
 
@@ -52,7 +54,8 @@ class Help(commands.Cog):
                 if not command.cog_name and not command.hidden:
                     commands_desc += f'`{COMMAND_PREFIX}{command.name}'
                     if len(command.aliases) > 0:
-                        commands_desc += f', aliases: {command.aliases}'
+                        aliases_string = 'aliases' if len(command.aliases) > 1 else 'alias'
+                        commands_desc += f', {aliases_string}: {", ".join(command.aliases)}'
                     commands_desc += f'` - {command.help}\n'
 
             if commands_desc:
@@ -71,19 +74,22 @@ class Help(commands.Cog):
         elif len(input) == 1:
 
             for cog in self.bot.cogs:
-                if cog.lower() == input[0].lower():
-
-                    emb = discord.Embed(title=f'{cog} - Commands', description=self.bot.cogs[cog].__doc__,
+                cog_aliases = self.bot.get_cog(cog).get_commands()[0].aliases
+                if cog.lower() == input[0].lower() or input[0].lower() in cog_aliases:
+                    cog_name = f"{cog} (alias: {', '.join(cog_aliases)})"
+                    emb = discord.Embed(title=f'{cog_name} - Commands', description=self.bot.cogs[cog].__doc__,
                                         color=discord.Color.green())
 
                     for command in self.bot.get_cog(cog).get_commands():
                         if not command.hidden:
-                            emb.add_field(name=f"`{COMMAND_PREFIX}{command.name}, aliases: {command.aliases}`",
+                            aliases_string = 'aliases' if len(command.aliases) > 1 else 'alias'
+                            emb.add_field(name=f"`{COMMAND_PREFIX}{command.name}, {aliases_string}: {', '.join(command.aliases)}`",
                                           value=command.help, inline=False)
                             for sub_command in command.walk_commands():
                                 if not sub_command.hidden:
+                                    aliases_string = 'aliases' if len(command.aliases) > 1 else 'alias'
                                     emb.add_field(
-                                        name=f"`{COMMAND_PREFIX}{sub_command.name}, aliases: {sub_command.aliases}`",
+                                        name=f"`{COMMAND_PREFIX}{sub_command.name}, {aliases_string}: {', '.join(sub_command.aliases)}`",
                                         value=sub_command.help, inline=False)
                     break
 
